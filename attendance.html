@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Attendance Log - RFRO XII</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f4f8; }
+        .btn-login  { background: #1d4ed8; color: #fff; }
+        .btn-logout { background: #15803d; color: #fff; }
+        .btn-login:disabled, .btn-logout:disabled { opacity: 0.35; cursor: not-allowed; }
+        .badge-in  { background: #dbeafe; color: #1d4ed8; }
+        .badge-out { background: #dcfce7; color: #15803d; }
+        @media (prefers-color-scheme: dark) { body { background: #0f172a; } }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- HEADER -->
+    <div style="background:#1d4ed8;color:#fff;padding:14px 18px;">
+        <div class="max-w-lg mx-auto flex items-center justify-between">
+            <div>
+                <div class="font-bold text-lg leading-tight">RFRO XII &mdash; Attendance</div>
+                <div class="text-blue-200 text-xs mt-0.5">Geotag Login / Logout</div>
+            </div>
+            <div class="text-right">
+                <div id="hdr-clock" class="font-mono font-bold text-lg"></div>
+                <div id="hdr-date"  class="text-blue-200 text-xs"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-lg mx-auto p-4 space-y-4">
+
+        <!-- WINDOW STATUS BANNER -->
+        <div id="banner" class="rounded-xl px-4 py-3 text-sm font-semibold text-center"></div>
+
+        <!-- ACTION CARD -->
+        <div class="bg-white rounded-2xl shadow p-5 space-y-4">
+            <div class="text-sm font-bold text-gray-600">Enter Your PIN to Record Attendance</div>
+
+            <input type="password" id="pin-input" maxlength="8"
+                placeholder="Personal PIN"
+                class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:border-blue-400"
+                inputmode="numeric"
+                onkeydown="if(event.key==='Enter') autoRecord()">
+
+            <div id="pin-err" class="hidden text-center text-xs text-red-500 font-semibold">Invalid PIN &mdash; not found in roster.</div>
+            <div id="dup-err" class="hidden text-center text-xs text-orange-500 font-semibold"></div>
+
+            <!-- LOGIN / LOGOUT buttons -->
+            <div class="grid grid-cols-2 gap-3">
+                <button id="btn-login"
+                    class="btn-login rounded-xl py-4 font-bold text-base transition"
+                    onclick="doRecord('Login')">
+                    &#9989; Log In
+                </button>
+                <button id="btn-logout"
+                    class="btn-logout rounded-xl py-4 font-bold text-base transition"
+                    onclick="doRecord('Logout')">
+                    &#128682; Log Out
+                </button>
+            </div>
+
+            <!-- GPS feedback -->
+            <div id="gps-status" class="text-xs text-gray-400 text-center min-h-4"></div>
+        </div>
+
+        <!-- SUCCESS TOAST (hidden by default) -->
+        <div id="toast" class="hidden rounded-xl px-4 py-3 text-sm font-semibold text-center"></div>
+
+        <!-- LOG TABLE -->
+        <div class="bg-white rounded-2xl shadow p-4">
+            <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                <div class="font-bold text-gray-700 text-sm">&#128203; Today&rsquo;s Log</div>
+                <div class="flex gap-2 items-center">
+                    <input type="date" id="filter-date"
+                        class="border rounded-lg px-2 py-1 text-xs"
+                        onchange="renderLog()">
+                    <button onclick="exportCSV()" class="text-xs px-3 py-1 bg-gray-100 border rounded-lg hover:bg-gray-200">
+                        &#128190; CSV
+                    </button>
+                </div>
+            </div>
+            <div id="log-area"></div>
+        </div>
+
+        <!-- FOOTER NOTE -->
+        <p class="text-center text-xs text-gray-400 pb-4">
+            Login: <strong>7:00 &ndash; 8:00 AM</strong> &nbsp;|&nbsp;
+            Logout: <strong>6:00 &ndash; 7:00 PM</strong> &nbsp;|&nbsp;
+            Mon &ndash; Thu only
+        </p>
+    </div>
+
+<script>
+    // ── CONFIG ───────────────────────────────────────────────────────
+    var LOGIN_H_START  = 7,  LOGIN_H_END  = 8;   // 7:00–8:00 AM
+    var LOGOUT_H_START = 18, LOGOUT_H_END = 19;  // 6:00–7:00 PM
+    var VALID_DAYS = [1,2,3,4];                   // Mon=1 … Thu=4
+
+    // ── HELPERS ──────────────────────────────────────────────────────
+    function dateKey(d) {
+        var y  = d.getFullYear();
+        var mo = String(d.getMonth()+1).padStart(2,'0');
+        var dd = String(d.getDate()).padStart(2,'0');
+        return y+'-'+mo+'-'+dd;
+    }
+    function fmtTime(d) {
+        return d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }
+    function fmtDate(d) {
+        return d.toLocaleDateString('en-PH',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
+    }
+    function isValidDay(d) { return VALID_DAYS.includes(d.getDay()); }
+    function getWindow(d) {
+        if (!isValidDay(d)) return null;
+        var h = d.getHours(), m = d.getMinutes();
+        var t = h*60+m;
+        if (t >= LOGIN_H_START*60  && t < LOGIN_H_END*60)  return 'Login';
+        if (t >= LOGOUT_H_START*60 && t < LOGOUT_H_END*60) return 'Logout';
+        return null;
+    }
+
+    // ── ROSTER (shared with TMS via same localStorage key) ────────────
+    function getRoster() {
+        try { return JSON.parse(localStorage.getItem('rfro_roster') || '[]'); }
+        catch(e) { return []; }
+    }
+    function findUser(pin) {
+        return getRoster().find(function(u){ return u.active && u.pin === pin; }) || null;
+    }
+
+    // ── ATTENDANCE STORAGE ────────────────────────────────────────────
+    function loadLogs() {
+        try { return JSON.parse(localStorage.getItem('rfro_attendance') || '[]'); }
+        catch(e) { return []; }
+    }
+    function saveLogs(arr) { localStorage.setItem('rfro_attendance', JSON.stringify(arr)); }
+
+    // ── CLOCK ─────────────────────────────────────────────────────────
+    function tick() {
+        var now = new Date();
+        document.getElementById('hdr-clock').textContent = fmtTime(now);
+        document.getElementById('hdr-date').textContent  = fmtDate(now);
+        updateBanner(now);
+        updateButtons(now);
+    }
+
+    function updateBanner(now) {
+        var el  = document.getElementById('banner');
+        var win = getWindow(now);
+        if (!isValidDay(now)) {
+            el.textContent = '&#128683; Only available Monday – Thursday';
+            el.style.cssText = 'background:#fef2f2;color:#b91c1c;';
+        } else if (win === 'Login') {
+            el.innerHTML = '&#9989; LOGIN window is OPEN &mdash; until 8:00 AM';
+            el.style.cssText = 'background:#eff6ff;color:#1d4ed8;';
+        } else if (win === 'Logout') {
+            el.innerHTML = '&#128682; LOGOUT window is OPEN &mdash; until 7:00 PM';
+            el.style.cssText = 'background:#f0fdf4;color:#15803d;';
+        } else {
+            var h = now.getHours();
+            var next = h < LOGIN_H_START  ? 'Login opens at 7:00 AM'
+                     : h < LOGOUT_H_START ? 'Logout opens at 6:00 PM'
+                     : 'Attendance closed for today';
+            el.textContent = '&#8987; Outside window \u2014 ' + next;
+            el.style.cssText = 'background:#f9fafb;color:#6b7280;';
+        }
+    }
+
+    function updateButtons(now) {
+        var win = getWindow(now);
+        var bl = document.getElementById('btn-login');
+        var bo = document.getElementById('btn-logout');
+        bl.disabled = (win !== 'Login');
+        bo.disabled = (win !== 'Logout');
+    }
+
+    // ── RECORD ───────────────────────────────────────────────────────
+    function autoRecord() {
+        var win = getWindow(new Date());
+        if (win) doRecord(win);
+    }
+
+    function doRecord(type) {
+        // Clear old messages
+        document.getElementById('pin-err').classList.add('hidden');
+        document.getElementById('dup-err').classList.add('hidden');
+        document.getElementById('gps-status').textContent = '';
+        hideToast();
+
+        var pin  = document.getElementById('pin-input').value.trim();
+        var user = findUser(pin);
+        if (!user) { document.getElementById('pin-err').classList.remove('hidden'); return; }
+
+        var now = new Date();
+        var win = getWindow(now);
+        if (win !== type) {
+            document.getElementById('gps-status').textContent =
+                type + ' is only available during its designated window (Mon–Thu).';
+            return;
+        }
+
+        // Duplicate check
+        var today = dateKey(now);
+        var logs  = loadLogs();
+        var dup   = logs.find(function(r){
+            return r.userId === user.id && r.type === type && r.date === today;
+        });
+        if (dup) {
+            var dupEl = document.getElementById('dup-err');
+            dupEl.textContent = 'You already recorded ' + type + ' today at ' + dup.time + '.';
+            dupEl.classList.remove('hidden');
+            return;
+        }
+
+        // GPS
+        document.getElementById('gps-status').textContent = 'Getting GPS location\u2026';
+        if (!navigator.geolocation) {
+            document.getElementById('gps-status').textContent = 'Geolocation not supported on this device.';
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                var lat = pos.coords.latitude;
+                var lon = pos.coords.longitude;
+                var acc = Math.round(pos.coords.accuracy);
+                var entry = {
+                    id:        'a' + Date.now(),
+                    userId:    user.id,
+                    name:      user.name,
+                    role:      user.role || '',
+                    type:      type,
+                    timestamp: now.toISOString(),
+                    date:      today,
+                    time:      fmtTime(now),
+                    lat:       lat,
+                    lon:       lon,
+                    accuracy:  acc
+                };
+                logs.push(entry);
+                saveLogs(logs);
+
+                document.getElementById('pin-input').value = '';
+                document.getElementById('gps-status').textContent = '';
+                showToast(type, user.name, fmtTime(now), lat, lon, acc);
+                renderLog();
+            },
+            function(err) {
+                var m = err.code === 1 ? 'Location access denied. Allow GPS in browser settings.'
+                      : err.code === 2 ? 'GPS signal unavailable. Try outdoors.'
+                      : err.code === 3 ? 'GPS timed out. Try again.'
+                      : err.message;
+                document.getElementById('gps-status').textContent = m;
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    }
+
+    // ── TOAST ─────────────────────────────────────────────────────────
+    function showToast(type, name, time, lat, lon, acc) {
+        var el  = document.getElementById('toast');
+        var col = type === 'Login' ? '#1d4ed8' : '#15803d';
+        var ico = type === 'Login' ? '&#9989;' : '&#128682;';
+        el.innerHTML = ico + ' <strong>' + type + '</strong> recorded for <strong>' + name + '</strong><br>'
+            + '<span style="font-size:11px;opacity:.8">' + time
+            + ' &mdash; GPS: ' + lat.toFixed(5) + ', ' + lon.toFixed(5)
+            + ' (&plusmn;' + acc + 'm)</span>';
+        el.style.cssText = 'background:' + col + ';color:#fff;display:block;border-radius:12px;padding:12px 16px;font-size:13px;font-weight:600;text-align:center;';
+        setTimeout(hideToast, 8000);
+    }
+    function hideToast() {
+        var el = document.getElementById('toast');
+        el.classList.add('hidden');
+        el.style.display = 'none';
+    }
+
+    // ── LOG TABLE ─────────────────────────────────────────────────────
+    function renderLog() {
+        var dateEl = document.getElementById('filter-date');
+        var fd     = dateEl.value;
+        var logs   = loadLogs().filter(function(r){ return !fd || r.date === fd; });
+        logs = logs.slice().reverse();
+        var el = document.getElementById('log-area');
+        if (!logs.length) {
+            el.innerHTML = '<p class="text-center text-xs text-gray-400 py-4">No records for this date.</p>';
+            return;
+        }
+        var rows = logs.map(function(r) {
+            var badge = r.type === 'Login'
+                ? '<span class="badge-in px-2 py-0.5 rounded text-xs font-bold">&#9989; In</span>'
+                : '<span class="badge-out px-2 py-0.5 rounded text-xs font-bold">&#128682; Out</span>';
+            var gps = '<a href="https://maps.google.com/?q='+r.lat+','+r.lon
+                +'" target="_blank" style="color:#2563eb;font-size:10px;text-decoration:underline">'
+                + r.lat.toFixed(4)+', '+r.lon.toFixed(4)+'</a>';
+            return '<tr style="border-bottom:1px solid #f3f4f6">'
+                +'<td style="padding:7px 8px;font-size:11px;white-space:nowrap">'+r.time+'</td>'
+                +'<td style="padding:7px 8px;font-size:12px;font-weight:600">'+r.name+'</td>'
+                +'<td style="padding:7px 8px">'+badge+'</td>'
+                +'<td style="padding:7px 8px;font-size:10px">'+gps+'</td>'
+                +'<td style="padding:7px 8px;font-size:10px;color:#9ca3af">&plusmn;'+r.accuracy+'m</td>'
+                +'</tr>';
+        }).join('');
+        el.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+            +'<thead><tr style="background:#f8fafc;border-bottom:2px solid #e5e7eb">'
+            +'<th style="padding:7px 8px;text-align:left;font-size:10px;color:#9ca3af">Time</th>'
+            +'<th style="padding:7px 8px;text-align:left;font-size:10px;color:#9ca3af">Name</th>'
+            +'<th style="padding:7px 8px;text-align:left;font-size:10px;color:#9ca3af">Type</th>'
+            +'<th style="padding:7px 8px;text-align:left;font-size:10px;color:#9ca3af">GPS</th>'
+            +'<th style="padding:7px 8px;text-align:left;font-size:10px;color:#9ca3af">Acc.</th>'
+            +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }
+
+    // ── CSV EXPORT ────────────────────────────────────────────────────
+    function exportCSV() {
+        var fd   = document.getElementById('filter-date').value;
+        var logs = loadLogs().filter(function(r){ return !fd || r.date === fd; });
+        if (!logs.length) { alert('No records to export.'); return; }
+        var hdr  = ['Date','Time','Name','Role','Type','Latitude','Longitude','Accuracy(m)'].join(',');
+        var rows = logs.map(function(r){
+            return [r.date,r.time,'"'+r.name+'"',r.role||'',r.type,r.lat,r.lon,r.accuracy||''].join(',');
+        });
+        var csv  = [hdr].concat(rows).join('\n');
+        var blob = new Blob([csv],{type:'text/csv'});
+        var url  = URL.createObjectURL(blob);
+        var a    = document.createElement('a');
+        a.href = url;
+        a.download = 'attendance'+(fd?'_'+fd:'')+'.csv';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
+
+    // ── INIT ──────────────────────────────────────────────────────────
+    (function init() {
+        // Set filter date to today
+        document.getElementById('filter-date').value = dateKey(new Date());
+        tick();
+        setInterval(tick, 1000);
+        renderLog();
+    }());
+</script>
+</body>
+</html>
