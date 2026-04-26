@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Attendance - RFRO XII</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#eef2f7;min-height:100vh;color:#1e293b}
+
+/* HEADER */
+.hdr{background:#1d4ed8;color:#fff;padding:14px 18px;position:sticky;top:0;z-index:10}
+.hdr-inner{max-width:480px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.hdr-title{font-size:17px;font-weight:700;line-height:1.2}
+.hdr-sub{font-size:11px;color:#bfdbfe;margin-top:2px}
+.hdr-clock{text-align:right}
+.hdr-time{font-size:18px;font-weight:700;font-family:monospace}
+.hdr-date{font-size:11px;color:#bfdbfe;margin-top:2px}
+
+/* MAIN */
+.main{max-width:480px;margin:0 auto;padding:14px 14px 40px}
+
+/* BANNER */
+.banner{border-radius:12px;padding:11px 16px;font-size:13px;font-weight:700;text-align:center;margin-bottom:14px}
+.banner-closed {background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+.banner-login  {background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.banner-logout {background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+.banner-wait   {background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
+.banner-test   {background:#fefce8;color:#854d0e;border:1px solid #fde68a}
+
+/* CARD */
+.card{background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:20px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:700;color:#475569;margin-bottom:14px}
+
+/* PIN */
+.pin-wrap{position:relative;margin-bottom:10px}
+.pin-input{width:100%;border:2px solid #e2e8f0;border-radius:12px;padding:14px 16px;font-size:26px;text-align:center;letter-spacing:8px;outline:none;transition:border-color .2s}
+.pin-input:focus{border-color:#3b82f6}
+
+/* BUTTONS */
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
+.btn{border:none;border-radius:12px;padding:16px 8px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s;width:100%}
+.btn:active{transform:scale(.97)}
+.btn-login {background:#1d4ed8;color:#fff}
+.btn-logout{background:#15803d;color:#fff}
+.btn:disabled{opacity:.3;cursor:not-allowed;transform:none}
+
+/* MESSAGES */
+.msg{font-size:12px;text-align:center;min-height:18px;margin-bottom:4px;font-weight:600}
+.msg-err  {color:#dc2626}
+.msg-info {color:#64748b}
+.msg-warn {color:#d97706}
+
+/* TOAST */
+.toast{border-radius:12px;padding:14px 16px;font-size:13px;font-weight:700;text-align:center;margin-bottom:14px;display:none;line-height:1.5}
+.toast-in {background:#1d4ed8;color:#fff}
+.toast-out{background:#15803d;color:#fff}
+
+/* LOG */
+.log-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.log-title{font-size:13px;font-weight:700;color:#475569}
+.log-tools{display:flex;gap:8px;align-items:center}
+.date-input{border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;font-size:12px;outline:none}
+.btn-csv{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600}
+.btn-csv:hover{background:#e2e8f0}
+.btn-clear{background:#fff;border:1px solid #fecaca;color:#dc2626;border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer}
+.log-empty{text-align:center;color:#94a3b8;font-size:13px;padding:20px 0}
+.log-table{width:100%;border-collapse:collapse;font-size:12px}
+.log-table th{padding:7px 8px;text-align:left;color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #f1f5f9;background:#f8fafc}
+.log-table td{padding:8px 8px;border-bottom:1px solid #f8fafc;vertical-align:middle}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.badge-in {background:#dbeafe;color:#1d4ed8}
+.badge-out{background:#dcfce7;color:#15803d}
+.gps-link{color:#2563eb;font-size:10px;text-decoration:underline}
+.acc-text{color:#94a3b8;font-size:10px}
+
+/* TEST MODE notice */
+.test-strip{background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;font-size:11px;color:#854d0e;text-align:center;margin-bottom:10px;display:none}
+
+/* FOOTER */
+.footer{text-align:center;color:#94a3b8;font-size:11px;padding-top:8px}
+</style>
+</head>
+<body>
+
+<!-- HEADER (tap 7x for test mode) -->
+<div class="hdr" id="hdr-tap">
+  <div class="hdr-inner">
+    <div>
+      <div class="hdr-title">RFRO XII &mdash; Attendance</div>
+      <div class="hdr-sub">Geotag Login / Logout</div>
+    </div>
+    <div class="hdr-clock">
+      <div class="hdr-time" id="hdr-time">--:--:--</div>
+      <div class="hdr-date" id="hdr-date"></div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- STATUS BANNER -->
+  <div class="banner banner-wait" id="banner">Checking time window&hellip;</div>
+
+  <!-- TEST MODE STRIP -->
+  <div class="test-strip" id="test-strip">&#9888; TEST MODE active &mdash; tap header 7&times; again to exit</div>
+
+  <!-- ACTION CARD -->
+  <div class="card">
+    <div class="card-title">&#128100; Enter Your PIN</div>
+    <div class="pin-wrap">
+      <input type="password" id="pin" class="pin-input"
+        maxlength="8" inputmode="numeric" placeholder="&#9679; &#9679; &#9679; &#9679;"
+        autocomplete="off"
+        onkeydown="if(event.key==='Enter')autoRecord()">
+    </div>
+    <div class="msg msg-err" id="msg-pin">&nbsp;</div>
+    <div class="msg msg-warn" id="msg-dup">&nbsp;</div>
+
+    <div class="btn-row">
+      <button class="btn btn-login"  id="btn-login"  disabled onclick="doRecord('Login')">
+        &#9989; Log In
+      </button>
+      <button class="btn btn-logout" id="btn-logout" disabled onclick="doRecord('Logout')">
+        &#128682; Log Out
+      </button>
+    </div>
+    <div class="msg msg-info" id="msg-gps">&nbsp;</div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- LOG CARD -->
+  <div class="card">
+    <div class="log-header">
+      <div class="log-title">&#128203; Attendance Log</div>
+      <div class="log-tools">
+        <input type="date" id="filter-date" class="date-input" onchange="renderLog()">
+        <button class="btn-csv" onclick="exportCSV()">&#128190; CSV</button>
+        <button class="btn-clear" onclick="clearLogs()">&#128465;</button>
+      </div>
+    </div>
+    <div id="log-area"><div class="log-empty">No records yet.</div></div>
+  </div>
+
+  <div class="footer">
+    Login: <strong>7:00&ndash;8:00 AM</strong> &nbsp;|&nbsp;
+    Logout: <strong>6:00&ndash;7:00 PM</strong> &nbsp;|&nbsp;
+    Mon &ndash; Thu &nbsp;|&nbsp;
+    <span id="gps-support"></span>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────
+var LOGIN_START  = 7,  LOGIN_END  = 8;    // 7:00–8:00 AM
+var LOGOUT_START = 18, LOGOUT_END = 19;   // 6:00–7:00 PM
+var VALID_DAYS   = [1,2,3,4];             // Mon–Thu
+
+// ── TEST MODE (tap header 7 times) ────────────────────────────────────
+var testMode = false;
+var tapCount = 0, tapTimer = null;
+document.getElementById('hdr-tap').addEventListener('click', function(){
+  clearTimeout(tapTimer);
+  tapCount++;
+  if (tapCount >= 7) {
+    tapCount = 0;
+    testMode = !testMode;
+    document.getElementById('test-strip').style.display = testMode ? 'block' : 'none';
+    updateUI(new Date());
+  }
+  tapTimer = setTimeout(function(){ tapCount = 0; }, 2000);
+});
+
+// ── HELPERS ───────────────────────────────────────────────────────────
+function pad(n){ return String(n).padStart(2,'0'); }
+function dateKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function fmtTime(d){ return d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function fmtDateLong(d){ return d.toLocaleDateString('en-PH',{weekday:'short',year:'numeric',month:'short',day:'numeric'}); }
+
+function isValidDay(d){ return VALID_DAYS.includes(d.getDay()); }
+function getWindow(d){
+  if (!isValidDay(d) && !testMode) return null;
+  var h = d.getHours(), m = d.getMinutes(), t = h*60+m;
+  if (t >= LOGIN_START*60  && t < LOGIN_END*60)  return 'Login';
+  if (t >= LOGOUT_START*60 && t < LOGOUT_END*60) return 'Logout';
+  if (testMode) return 'Login'; // test mode unlocks Login button
+  return null;
+}
+
+// ── ROSTER ────────────────────────────────────────────────────────────
+// Reads from shared localStorage (same as TMS).
+// Falls back to built-in defaults so the app works even standalone.
+var DEFAULTS = [
+  {id:'u1',name:'Maria Santos',       role:'Receiving', pin:'1111',active:true},
+  {id:'u2',name:'Ben Cabrera',        role:'Receiving', pin:'1122',active:true},
+  {id:'u3',name:'Ana Gomez',          role:'Releasing', pin:'5511',active:true},
+  {id:'u4',name:'Lea Reyes',          role:'Cashier',   pin:'2211',active:true},
+  {id:'u5',name:'Engr. Jose Ramos',   role:'Processor', pin:'3311',active:true},
+  {id:'u6',name:'Atty. Carmen Villar',role:'Processor', pin:'3322',active:true},
+  {id:'u7',name:'Dir. Ramon Reyes',   role:'Approver',  pin:'4411',active:true},
+  {id:'u8',name:'Admin Officer',      role:'Admin',     pin:'9999',active:true}
+];
+function getRoster(){
+  try{
+    var r = JSON.parse(localStorage.getItem('rfro_roster')||'null');
+    return (r && r.length) ? r : DEFAULTS;
+  }catch(e){ return DEFAULTS; }
+}
+function findUser(pin){
+  return getRoster().find(function(u){ return u.active && u.pin===pin; })||null;
+}
+
+// ── STORAGE ───────────────────────────────────────────────────────────
+function loadLogs(){
+  try{ return JSON.parse(localStorage.getItem('rfro_attendance')||'[]'); }
+  catch(e){ return []; }
+}
+function saveLogs(arr){ localStorage.setItem('rfro_attendance', JSON.stringify(arr)); }
+
+// ── CLOCK / UI ────────────────────────────────────────────────────────
+function tick(){
+  var now = new Date();
+  document.getElementById('hdr-time').textContent = fmtTime(now);
+  document.getElementById('hdr-date').textContent = fmtDateLong(now);
+  updateUI(now);
+}
+
+function updateUI(now){
+  var win = getWindow(now);
+  var banner = document.getElementById('banner');
+  var bl = document.getElementById('btn-login');
+  var bo = document.getElementById('btn-logout');
+
+  if (testMode){
+    banner.className = 'banner banner-test';
+    banner.innerHTML = '&#9888; TEST MODE &mdash; buttons unlocked for testing';
+    bl.disabled = false;
+    bo.disabled = false;
+    return;
+  }
+
+  // Button states
+  bl.disabled = (win !== 'Login');
+  bo.disabled = (win !== 'Logout');
+
+  // Banner
+  if (!isValidDay(now)){
+    banner.className = 'banner banner-closed';
+    banner.innerHTML = '&#128683; Only available <strong>Monday &ndash; Thursday</strong>';
+  } else if (win === 'Login'){
+    banner.className = 'banner banner-login';
+    banner.innerHTML = '&#9989; <strong>LOGIN</strong> window is OPEN &mdash; until 8:00 AM';
+  } else if (win === 'Logout'){
+    banner.className = 'banner banner-logout';
+    banner.innerHTML = '&#128682; <strong>LOGOUT</strong> window is OPEN &mdash; until 7:00 PM';
+  } else {
+    var h = now.getHours();
+    var next = h < LOGIN_START  ? 'Login window opens at <strong>7:00 AM</strong>'
+             : h < LOGOUT_START ? 'Logout window opens at <strong>6:00 PM</strong>'
+             : 'Attendance window <strong>closed</strong> for today';
+    banner.className = 'banner banner-wait';
+    banner.innerHTML = '&#8987; ' + next;
+  }
+}
+
+// ── RECORD ────────────────────────────────────────────────────────────
+function autoRecord(){
+  var win = getWindow(new Date());
+  if (win) doRecord(win);
+}
+
+function doRecord(type){
+  clearMsgs();
+  var pin  = document.getElementById('pin').value.trim();
+  if (!pin){ setMsg('pin','Enter your PIN first.'); return; }
+
+  var user = findUser(pin);
+  if (!user){ setMsg('pin','PIN not found. Check your PIN and try again.'); return; }
+
+  var now = new Date();
+  // In test mode allow both; otherwise check window
+  if (!testMode){
+    var win = getWindow(now);
+    if (win !== type){
+      setMsg('gps', type+' is only allowed during its time window (Mon\u2013Thu).');
+      return;
+    }
+  }
+
+  // Duplicate check
+  var today = dateKey(now);
+  var logs  = loadLogs();
+  var dup   = logs.find(function(r){
+    return r.userId===user.id && r.type===type && r.date===today;
+  });
+  if (dup){
+    setMsg('dup','Already recorded '+type+' today at '+dup.time+'.');
+    return;
+  }
+
+  // GPS
+  if (!navigator.geolocation){
+    saveRecord(user, type, now, null, null, null, 'GPS not supported');
+    return;
+  }
+  setMsg('gps','&#128205; Getting location\u2026');
+  navigator.geolocation.getCurrentPosition(
+    function(pos){
+      saveRecord(user, type, now,
+        pos.coords.latitude, pos.coords.longitude,
+        Math.round(pos.coords.accuracy), null);
+    },
+    function(err){
+      // Still save the record but flag GPS as unavailable
+      var reason = err.code===1 ? 'Permission denied'
+                 : err.code===2 ? 'GPS unavailable'
+                 : err.code===3 ? 'GPS timed out'
+                 : 'GPS error';
+      saveRecord(user, type, now, null, null, null, reason);
+    },
+    {enableHighAccuracy:true, timeout:12000, maximumAge:0}
+  );
+}
+
+function saveRecord(user, type, now, lat, lon, acc, gpsErr){
+  var entry = {
+    id:        'a'+Date.now(),
+    userId:    user.id,
+    name:      user.name,
+    role:      user.role||'',
+    type:      type,
+    timestamp: now.toISOString(),
+    date:      dateKey(now),
+    time:      fmtTime(now),
+    lat:       lat,
+    lon:       lon,
+    accuracy:  acc,
+    gpsErr:    gpsErr||null,
+    testMode:  testMode||false
+  };
+  var logs = loadLogs();
+  logs.push(entry);
+  saveLogs(logs);
+  document.getElementById('pin').value = '';
+  clearMsgs();
+  showToast(type, user.name, fmtTime(now), lat, lon, acc, gpsErr);
+  renderLog();
+}
+
+// ── MESSAGES ──────────────────────────────────────────────────────────
+function clearMsgs(){
+  setMsg('pin','\u00a0'); setMsg('dup','\u00a0'); setMsg('gps','\u00a0');
+}
+function setMsg(id, txt){ document.getElementById('msg-'+id).innerHTML = txt; }
+
+// ── TOAST ─────────────────────────────────────────────────────────────
+var toastTimer = null;
+function showToast(type, name, time, lat, lon, acc, gpsErr){
+  var el  = document.getElementById('toast');
+  el.className = 'toast '+(type==='Login'?'toast-in':'toast-out');
+  var gpsLine = gpsErr
+    ? '<br><span style="font-size:11px;opacity:.8">&#9888; GPS: '+gpsErr+' (record saved without coordinates)</span>'
+    : '<br><span style="font-size:11px;opacity:.8">&#128205; '+lat.toFixed(5)+', '+lon.toFixed(5)+' (&plusmn;'+acc+'m)</span>';
+  el.innerHTML = (type==='Login'?'&#9989;':'&#128682;')
+    +' <strong>'+type+'</strong> recorded for <strong>'+name+'</strong>'
+    +'<br><span style="font-size:12px;opacity:.9">'+time+'</span>'
+    +gpsLine;
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.style.display='none'; }, 10000);
+}
+
+// ── LOG TABLE ─────────────────────────────────────────────────────────
+function renderLog(){
+  var fd   = document.getElementById('filter-date').value;
+  var logs = loadLogs().filter(function(r){ return !fd || r.date===fd; });
+  logs = logs.slice().reverse();
+  var el = document.getElementById('log-area');
+  if (!logs.length){
+    el.innerHTML = '<div class="log-empty">No records for this date.</div>';
+    return;
+  }
+  var rows = logs.map(function(r){
+    var badge = r.type==='Login'
+      ? '<span class="badge badge-in">&#9989; In</span>'
+      : '<span class="badge badge-out">&#128682; Out</span>';
+    var gpsCell = (r.lat != null)
+      ? '<a class="gps-link" href="https://maps.google.com/?q='+r.lat+','+r.lon
+          +'" target="_blank">'+r.lat.toFixed(4)+',<br>'+r.lon.toFixed(4)+'</a>'
+          +'<div class="acc-text">&plusmn;'+r.accuracy+'m</div>'
+      : '<span class="acc-text">'+(r.gpsErr||'No GPS')+'</span>';
+    var testTag = r.testMode ? ' <span style="font-size:9px;color:#d97706">[TEST]</span>' : '';
+    return '<tr>'
+      +'<td style="white-space:nowrap">'+r.time+'</td>'
+      +'<td><strong>'+r.name+'</strong>'+testTag+'<br>'
+          +'<span style="font-size:10px;color:#94a3b8">'+r.role+'</span></td>'
+      +'<td>'+badge+'</td>'
+      +'<td>'+gpsCell+'</td>'
+      +'</tr>';
+  }).join('');
+  el.innerHTML = '<div style="overflow-x:auto"><table class="log-table">'
+    +'<thead><tr><th>Time</th><th>Name</th><th>Type</th><th>GPS</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table></div>';
+}
+
+function clearLogs(){
+  if (!confirm('Clear ALL attendance logs? This cannot be undone.')) return;
+  localStorage.removeItem('rfro_attendance');
+  renderLog();
+}
+
+// ── CSV EXPORT ────────────────────────────────────────────────────────
+function exportCSV(){
+  var fd   = document.getElementById('filter-date').value;
+  var logs = loadLogs().filter(function(r){ return !fd || r.date===fd; });
+  if (!logs.length){ alert('No records to export.'); return; }
+  var hdr  = ['Date','Time','Name','Role','Type','Latitude','Longitude','Accuracy(m)','GPS_Error','Test'].join(',');
+  var rows = logs.map(function(r){
+    return [r.date, r.time, '"'+r.name+'"', r.role||'', r.type,
+            r.lat!=null?r.lat:'', r.lon!=null?r.lon:'', r.accuracy||'',
+            r.gpsErr||'', r.testMode?'YES':''].join(',');
+  });
+  var csv  = [hdr].concat(rows).join('\n');
+  var blob = new Blob([csv],{type:'text/csv'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  a.download = 'attendance'+(fd?'_'+fd:'')+'.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ── GPS SUPPORT CHECK ─────────────────────────────────────────────────
+document.getElementById('gps-support').textContent =
+  navigator.geolocation ? 'GPS ready' : 'GPS not supported';
+
+// ── INIT ──────────────────────────────────────────────────────────────
+document.getElementById('filter-date').value = dateKey(new Date());
+tick();
+setInterval(tick, 1000);
+renderLog();
+</script>
+</body>
+</html>
